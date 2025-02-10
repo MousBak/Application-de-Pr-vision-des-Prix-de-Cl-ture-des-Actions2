@@ -1,20 +1,41 @@
-# Application de Prévision des Prix de Clôture des Actions
+# Prévision des Prix de Clôture des Actions
 
-Cette application Streamlit permet de prévoir les prix de clôture des actions pour différents indices boursiers (S&P500, DAX, Nikkei225, FTSE100, CAC40) en utilisant le modèle Prophet de Facebook.
+Application web interactive pour l'analyse et la prévision des prix de clôture des actions, développée avec Streamlit et Python.
 
 ## Fonctionnalités
 
-- Sélection d'indices boursiers multiples (S&P500, DAX, Nikkei225, FTSE100, CAC40)
-- Téléchargement automatique des données historiques via Yahoo Finance
-- Visualisation interactive des prix historiques
-- Prévision des prix futurs avec Prophet
-- Analyse des points de changement (changepoints)
-- Support des jours fériés pour différents pays
-- Téléchargement des modèles entraînés
+### 1. Analyse des Données
+- Chargement des données historiques des actions via Yahoo Finance
+- Visualisation interactive des prix avec Plotly
+- Affichage des statistiques clés (prix actuel, variation, volume)
+- Support pour différents marchés (CAC 40, NASDAQ, etc.)
+
+### 2. Analyse Technique
+- Calcul et affichage des indicateurs techniques :
+  - Moyennes mobiles (20, 50, 200 jours)
+  - RSI (Relative Strength Index)
+  - MACD (Moving Average Convergence Divergence)
+- Visualisation des signaux d'achat/vente
+
+### 3. Prévision des Prix
+- Modèles de prévision disponibles :
+  - SARIMA
+  - Prophet
+  - LSTM
+- Paramètres ajustables pour chaque modèle
+- Visualisation des prévisions avec intervalles de confiance
+
+### 4. Génération de Rapports
+- Rapports PDF détaillés :
+  - Rapport résumé : vue d'ensemble et statistiques clés
+  - Rapport technique : analyse des indicateurs techniques
+  - Rapport fondamental : métriques et tendances
+- Graphiques et visualisations inclus
+- Téléchargement facile des rapports générés
 
 ## Installation
 
-1. Cloner le repository :
+1. Cloner le dépôt :
 ```bash
 git clone [URL_DU_REPO]
 cd "Prévision des Prix de Clôture des Actions"
@@ -33,40 +54,42 @@ streamlit run forecasting_app.py
 ```
 
 2. Dans l'interface :
-   - Sélectionner un indice boursier
-   - Choisir une action dans la liste
-   - Définir la période d'analyse
-   - Ajuster les paramètres de prévision si nécessaire
-   - Cliquer sur "Run Forecasting"
+   - Sélectionner le marché et l'action désirée
+   - Choisir la période d'analyse
+   - Explorer les différents onglets d'analyse
+   - Générer et télécharger les rapports
 
 ## Structure du Projet
 
-- `forecasting_app.py` : Application principale Streamlit
-- `utils.py` : Fonctions utilitaires pour le chargement et le traitement des données
-- `requirements.txt` : Liste des dépendances Python
-- `.streamlit/config.toml` : Configuration Streamlit
-
-## Paramètres de Prévision
-
-- **Testing Data Percentage** : Pourcentage des données utilisées pour le test (0.1 à 0.4)
-- **Changepoint Range** : Flexibilité des points de changement (0.05 à 0.95)
-- **Country Holidays** : Jours fériés à prendre en compte (US, FR, DE, JP, GB)
-- **Forecast Horizon** : Nombre de jours à prévoir
+```
+├── forecasting_app.py     # Application principale
+├── analysis/
+│   ├── technical_analysis.py    # Indicateurs techniques
+│   └── forecasting_models.py    # Modèles de prévision
+├── utils/
+│   ├── data_loader.py          # Chargement des données
+│   └── report_generator.py     # Génération des rapports
+├── models/                     # Modèles entraînés
+└── rapports/                  # Rapports générés
+```
 
 ## Dépendances Principales
 
-- Streamlit 1.12.0
-- Pandas 1.5.3
-- Prophet 1.1.4
-- YFinance 0.2.18
-- Plotly 5.14.1
+- Streamlit : Interface utilisateur
+- Pandas : Manipulation des données
+- Plotly : Visualisations interactives
+- yfinance : Données boursières
+- scikit-learn : Modèles de prévision
+- Prophet : Prévisions avancées
+- FPDF : Génération de rapports PDF
 
-## Remarques
+## Contribution
 
-- L'application nécessite une connexion Internet pour télécharger les données
-- Les prévisions sont basées sur les données historiques et ne garantissent pas les performances futures
-- Certains symboles boursiers peuvent ne pas être disponibles selon la région
+Les contributions sont les bienvenues ! N'hésitez pas à :
+- Signaler des bugs
+- Proposer des nouvelles fonctionnalités
+- Soumettre des pull requests
 
-## Support
+## Licence
 
-Pour toute question ou problème, veuillez ouvrir une issue dans le repository GitHub.
+Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.

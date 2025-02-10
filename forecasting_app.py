@@ -1,317 +1,279 @@
+"""
+Application de prévision des prix de clôture des actions.
+
+Cette application permet d'analyser et de prédire les prix des actions en utilisant
+différentes méthodes d'analyse technique et des modèles de prévision.
+"""
+
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import cufflinks as cf
 import plotly.graph_objects as go
-import datetime
+from datetime import datetime, timedelta
 import yfinance as yf
-from bs4 import BeautifulSoup
-from sklearn.model_selection import train_test_split
+import traceback
+import os
 
-from prophet import Prophet
-from prophet.plot import plot_plotly
-from prophet.plot import add_changepoints_to_plot
-
-import plotly.express as px
-from prophet.serialize import model_to_json
-
-from utils import *
+from analysis.technical_analysis import TechnicalAnalysis
+from utils.report_generator import ReportGenerator
 
 # Configuration de la page
 st.set_page_config(
-    page_title="Prévision des Prix de Clôture",
+    page_title="Prévision des Prix de Clôture des Actions",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Titre principal
-st.title("Prévision des Prix de Clôture")
+# Dictionnaire des indices boursiers
+MARKET_INDICES = {
+    "CAC 40": "^FCHI",
+    "NASDAQ": "^IXIC",
+    "S&P 500": "^GSPC",
+    "Dow Jones": "^DJI"
+}
 
-# set offline mode for cufflinks
-cf.go_offline()
-
-# sidebar
-# inputs for dowloading data
-st.sidebar.header("Stock Parameters")
-
-# update available tickers based on market index selection
-market_index = st.sidebar.selectbox(
-    " Market Index",
-      ["S&P500", "DAX", "Nikkei225", "FTSE100", "CAC40"]
-)
-
-if market_index == "S&P500":
-  available_tickers, tickers_companies_dict = get_sp500_components()
-
-elif market_index == "DAX":
-  available_tickers, tickers_companies_dict = get_dax_components()
-
-elif market_index == "Nikkei225":
-  available_tickers, tickers_companies_dict = get_nikkei225_components()
-
-elif market_index == "FTSE100":
-  available_tickers, tickers_companies_dict = get_ftse_components()
-
-elif market_index == "CAC40":
-  available_tickers, tickers_companies_dict = get_cac40_components()
-
-
-# available_tickers, tickers_companies_dict = get_sp500_components()
-
-ticker = st.sidebar.selectbox(
-
-    "Ticker",
-    available_tickers,
-    format_func= tickers_companies_dict.get
-    )
-
-start_date = st.sidebar.date_input(
-    "Start Date",
-    value=datetime.date(2015, 1, 1),
-    min_value=datetime.date(2010, 1, 1),
-    max_value=datetime.date.today()
-)
-
-end_date = st.sidebar.date_input(
-    "End Date",
-    value=datetime.date.today(),
-    min_value=start_date,
-    max_value=datetime.date.today()
-)
-
-if start_date >= end_date:
-    st.sidebar.error("La date de fin doit être postérieure à la date de début")
-    st.stop()
-
-# input for technical analysis
-st.sidebar.header("Forecasting Process")
-
-exp_prophet = st.sidebar.expander("Prophet Parameters") # Renamed expander variable
-test_data_percentage = exp_prophet.number_input("Testing Data Percentage", 0.1, 0.4, 0.2, 0.05)
-changepoints_range = exp_prophet.number_input("Changepoint Range", 0.05, 0.95, 0.9, 0.05) # Fixed variable name
-country_holidays = exp_prophet.selectbox("Country Holidays", ['US', 'FR', 'DE', 'JP', 'GB']) # Fixed variable name
-horizon = exp_prophet.number_input("Forecast Horizon (days)", min_value=1, value=365, step=1) # Fixed variable name
-download_prophet = exp_prophet.checkbox(label="Download Model") # Fixed variable name
-
-
-# st.subheader("Modeling Process")
-modeling_option = st.sidebar.radio("Select Modeling Process", ["Prophet"])
-
-# main body
-
-run_button = st.sidebar.button("Run Forecasting")
-# Move loading data outside the 'if run_button' block
-st.write(f"Tentative de chargement des données pour {ticker} du {start_date} au {end_date}")
-df = load_data(ticker, start_date, end_date, market_index)
-
-# Afficher des informations sur les données chargées
-if df is not None and not df.empty:
-    st.write(f"Données chargées : {len(df)} lignes")
-    st.write(f"Première date : {df.index[0]}")
-    st.write(f"Dernière date : {df.index[-1]}")
+def load_stock_data(symbol: str, start_date: datetime, end_date: datetime) -> pd.DataFrame:
+    """
+    Charge les données historiques d'une action depuis Yahoo Finance.
     
-    if run_button:
-        # data preview part
-        def display_data_preview(title, df, fil_name, key):
-            st.subheader(title)
-            st.write(df.head())
-            
-            # Convertir le DataFrame en CSV pour le téléchargement
-            csv = df.to_csv(index=True)
-            st.download_button(
-                label="Télécharger les données",
-                data=csv,
-                file_name=fil_name,
-                mime='text/csv',
-                key=key
+    Args:
+        symbol (str): Symbole de l'action
+        start_date (datetime): Date de début
+        end_date (datetime): Date de fin
+        
+    Returns:
+        pd.DataFrame: DataFrame contenant les données de l'action
+    """
+    try:
+        stock = yf.Ticker(symbol)
+        data = stock.history(start=start_date, end=end_date)
+        
+        # Renommer les colonnes en français
+        column_mapping = {
+            'Open': 'Ouverture',
+            'High': 'Haut',
+            'Low': 'Bas',
+            'Close': 'Fermeture',
+            'Volume': 'Volume',
+            'Dividends': 'Dividendes',
+            'Stock Splits': 'Fractionnement des actions'
+        }
+        data = data.rename(columns=column_mapping)
+        
+        return data
+        
+    except Exception as e:
+        st.error(f"Erreur lors du chargement des données : {str(e)}")
+        return None
+
+def plot_stock_data(data: pd.DataFrame, title: str = "Évolution des prix") -> go.Figure:
+    """
+    Crée un graphique en chandelier des prix de l'action.
+    
+    Args:
+        data (pd.DataFrame): Données de l'action
+        title (str): Titre du graphique
+        
+    Returns:
+        go.Figure: Figure Plotly
+    """
+    fig = go.Figure(data=[go.Candlestick(
+        x=data.index,
+        open=data['Ouverture'],
+        high=data['Haut'],
+        low=data['Bas'],
+        close=data['Fermeture']
+    )])
+    
+    fig.update_layout(
+        title=title,
+        yaxis_title='Prix',
+        xaxis_title='Date',
+        template='plotly_white'
+    )
+    
+    return fig
+
+def generate_reports(symbol: str, data: pd.DataFrame) -> None:
+    """
+    Génère les différents rapports d'analyse.
+    
+    Args:
+        symbol (str): Symbole de l'action
+        data (pd.DataFrame): Données de l'action
+    """
+    try:
+        # Vérifier les données
+        if data is None:
+            raise ValueError("Les données ne sont pas disponibles")
+        if not isinstance(data, pd.DataFrame):
+            raise ValueError(f"Type de données invalide : {type(data)}")
+        if len(data) == 0:
+            raise ValueError("Aucune donnée disponible")
+        
+        # Créer une instance de ReportGenerator
+        report_gen = ReportGenerator(data=data, symbol=symbol)
+        
+        # Générer les rapports
+        reports = []
+        
+        try:
+            summary_report = report_gen.generate_summary_report()
+            if summary_report:
+                reports.append(("Rapport résumé", summary_report))
+        except Exception as e:
+            print(f"Erreur lors de la génération du rapport résumé : {str(e)}")
+        
+        try:
+            technical_report = report_gen.generate_technical_report()
+            if technical_report:
+                reports.append(("Rapport technique", technical_report))
+        except Exception as e:
+            print(f"Erreur lors de la génération du rapport technique : {str(e)}")
+        
+        try:
+            fundamental_report = report_gen.generate_fundamental_report()
+            if fundamental_report:
+                reports.append(("Rapport fondamental", fundamental_report))
+        except Exception as e:
+            print(f"Erreur lors de la génération du rapport fondamental : {str(e)}")
+        
+        # Afficher les rapports générés
+        if reports:
+            st.success("✅ Rapports générés avec succès !")
+            for title, path in reports:
+                if os.path.exists(path):
+                    with open(path, "rb") as f:
+                        st.download_button(
+                            label=f"Télécharger {title}",
+                            data=f,
+                            file_name=os.path.basename(path),
+                            mime="application/pdf"
+                        )
+                else:
+                    st.warning(f"⚠️ Le fichier {title} n'a pas été trouvé")
+        else:
+            st.warning("⚠️ Aucun rapport n'a pu être généré")
+        
+    except ValueError as ve:
+        st.error(f"❌ Erreur de validation : {str(ve)}")
+        print(f"Erreur de validation détaillée : {str(ve)}")
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la génération des rapports : {str(e)}")
+        print(f"Erreur détaillée : {str(e)}")
+        print(f"Traceback : {traceback.format_exc()}")
+
+def main():
+    """Fonction principale de l'application."""
+    
+    # Sidebar pour la sélection des paramètres
+    with st.sidebar:
+        st.title("⚙️ Paramètres")
+        
+        # Sélection du marché
+        market_index = st.selectbox(
+            "Sélectionner un marché",
+            list(MARKET_INDICES.keys())
+        )
+        
+        # Sélection de la période
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input(
+                "Date de début",
+                datetime.now() - timedelta(days=365)
+            )
+        with col2:
+            end_date = st.date_input(
+                "Date de fin",
+                datetime.now()
             )
         
-        display_data_preview("previw data", df, f"{ticker}_historical_data.csv", key=2)
-        
-        if modeling_option == "Prophet":
-            st.write("Exécution du processus de modélisation Prophet... ")
-            
-            try:
-                # Préparation des données pour Prophet
-                df_model = df.reset_index()
-                df_model = df_model[['Date', 'Close']].copy()
-                df_model.columns = ['ds', 'y']
-                df_model['ds'] = pd.to_datetime(df_model['ds'])
-                
-                if len(df_model) < 5:
-                    st.error("Pas assez de données pour la prévision")
-                else:
-                    # Division train/test
-                    total_days = len(df_model)
-                    train_days = int(total_days * (1 - test_data_percentage))
+        # Bouton pour charger les données
+        if st.button("Charger les données"):
+            with st.spinner("Chargement des données..."):
+                try:
+                    # Charger les données de l'indice
+                    symbol = MARKET_INDICES[market_index]
+                    data = load_stock_data(symbol, start_date, end_date)
                     
-                    df_train = df_model.iloc[:train_days].copy()
-                    df_test = df_model.iloc[train_days:].copy()
-                    
-                    st.write(f"Données d'entraînement : {len(df_train)} jours")
-                    st.write(f"Données de test : {len(df_test)} jours")
-                    
-                    # Entraînement du modèle
-                    model = Prophet(
-                        changepoint_range=changepoints_range,
-                        yearly_seasonality=True,
-                        weekly_seasonality=True,
-                        daily_seasonality=False
-                    )
-                    model.add_country_holidays(country_name=country_holidays)
-                    model.fit(df_train)
-                    
-                    # Prédictions
-                    future_dates = pd.date_range(
-                        start=df_model['ds'].min(),
-                        end=df_model['ds'].max(),
-                        freq='D'
-                    )
-                    future_df = pd.DataFrame({'ds': future_dates})
-                    forecast = model.predict(future_df)
-                    
-                    # Affichage des prédictions
-                    st.subheader("Résultats de la Prévision")
-                    
-                    # Graphique des résultats
-                    fig = go.Figure()
-                    
-                    # Données réelles
-                    fig.add_trace(go.Scatter(
-                        x=df_model['ds'],
-                        y=df_model['y'],
-                        mode='lines',
-                        name='Prix réels',
-                        line=dict(color='blue')
-                    ))
-                    
-                    # Prédictions
-                    fig.add_trace(go.Scatter(
-                        x=forecast['ds'],
-                        y=forecast['yhat'],
-                        mode='lines',
-                        name='Prédictions',
-                        line=dict(color='red')
-                    ))
-                    
-                    # Intervalle de confiance
-                    fig.add_trace(go.Scatter(
-                        x=forecast['ds'].tolist() + forecast['ds'].tolist()[::-1],
-                        y=forecast['yhat_upper'].tolist() + forecast['yhat_lower'].tolist()[::-1],
-                        fill='toself',
-                        fillcolor='rgba(0,100,80,0.2)',
-                        line=dict(color='rgba(255,255,255,0)'),
-                        name='Intervalle de confiance'
-                    ))
-                    
-                    fig.update_layout(
-                        title=f"Prédictions pour {ticker}",
-                        xaxis_title="Date",
-                        yaxis_title="Prix",
-                        hovermode='x unified'
-                    )
-                    st.plotly_chart(fig)
-                    
-                    # Prévisions futures
-                    st.subheader("Prévisions Futures")
-                    horizon = st.slider(
-                        "Nombre de jours à prévoir",
-                        min_value=7,
-                        max_value=365,
-                        value=30
-                    )
-                    
-                    # Création des dates futures
-                    last_date = df_model['ds'].max()
-                    future_dates = pd.date_range(
-                        start=last_date,
-                        periods=horizon + 1,
-                        freq='D'
-                    )[1:]  # Exclure le premier jour qui est le dernier jour des données
-                    
-                    future_df = pd.DataFrame({'ds': future_dates})
-                    future_forecast = model.predict(future_df)
-                    
-                    # Graphique des prévisions futures
-                    fig = go.Figure()
-                    
-                    # Données historiques
-                    fig.add_trace(go.Scatter(
-                        x=df_model['ds'],
-                        y=df_model['y'],
-                        mode='lines',
-                        name='Données historiques',
-                        line=dict(color='blue')
-                    ))
-                    
-                    # Prévisions
-                    fig.add_trace(go.Scatter(
-                        x=future_forecast['ds'],
-                        y=future_forecast['yhat'],
-                        mode='lines',
-                        name='Prévisions',
-                        line=dict(color='red')
-                    ))
-                    
-                    # Intervalle de confiance
-                    fig.add_trace(go.Scatter(
-                        x=future_forecast['ds'].tolist() + future_forecast['ds'].tolist()[::-1],
-                        y=future_forecast['yhat_upper'].tolist() + future_forecast['yhat_lower'].tolist()[::-1],
-                        fill='toself',
-                        fillcolor='rgba(0,100,80,0.2)',
-                        line=dict(color='rgba(255,255,255,0)'),
-                        name='Intervalle de confiance'
-                    ))
-                    
-                    fig.update_layout(
-                        title=f"Prévisions futures pour {ticker}",
-                        xaxis_title="Date",
-                        yaxis_title="Prix",
-                        hovermode='x unified'
-                    )
-                    st.plotly_chart(fig)
-                    
-                    # Téléchargement des données
-                    st.subheader("Téléchargement des Données")
-                    
-                    # Données historiques et prédictions
-                    df_results = pd.merge(
-                        df_model,
-                        forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']],
-                        on='ds',
-                        how='left'
-                    )
-                    df_results.columns = ['Date', 'Prix réel', 'Prédiction', 'Borne inférieure', 'Borne supérieure']
-                    
-                    # Prévisions futures
-                    df_future = future_forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
-                    df_future.columns = ['Date', 'Prédiction', 'Borne inférieure', 'Borne supérieure']
-                    
-                    # Téléchargement des résultats
-                    st.download_button(
-                        label="Télécharger les résultats",
-                        data=df_results.to_csv(index=False),
-                        file_name=f"{ticker}_resultats.csv",
-                        mime="text/csv"
-                    )
-                    
-                    st.download_button(
-                        label="Télécharger les prévisions futures",
-                        data=df_future.to_csv(index=False),
-                        file_name=f"{ticker}_previsions_futures.csv",
-                        mime="text/csv"
-                    )
-                    
-                    # Téléchargement du modèle
-                    if st.button("Télécharger le modèle Prophet"):
-                        with open('modele_prophet.json', 'w') as f:
-                            f.write(model_to_json(model))
-                        st.success("Modèle sauvegardé dans 'modele_prophet.json'")
+                    if data is not None and not data.empty:
+                        st.session_state.data = data
+                        st.session_state.symbol = symbol
+                        st.success("Données chargées avec succès!")
+                    else:
+                        st.error("Impossible de charger les données.")
                         
-            except Exception as e:
-                st.error(f"Erreur lors de la modélisation : {str(e)}")
-                st.error("Détails de l'erreur pour le débogage :")
-                st.write(e)
-else:
-    st.error("Aucune donnée n'a été chargée. Veuillez vérifier le symbole et les dates sélectionnées.")
+                except Exception as e:
+                    st.error(f"Erreur : {str(e)}")
+    
+    # Corps principal
+    st.title("📊 Analyse et Prévision des Actions")
+    
+    if 'data' in st.session_state:
+        # Onglets pour différentes analyses
+        tab1, tab2, tab3 = st.tabs(["📈 Prix", "📊 Analyse Technique", "📑 Rapports"])
+        
+        # Onglet Prix
+        with tab1:
+            st.subheader("Évolution des Prix")
+            fig = plot_stock_data(st.session_state.data)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Onglet Analyse Technique
+        with tab2:
+            st.subheader("Indicateurs Techniques")
+            
+            # Créer une instance de TechnicalAnalysis
+            tech_analyzer = TechnicalAnalysis(st.session_state.data)
+            
+            # Afficher les moyennes mobiles
+            st.write("### Moyennes Mobiles")
+            ma_20 = tech_analyzer.calculate_ma(window=20)
+            ma_50 = tech_analyzer.calculate_ma(window=50)
+            ma_200 = tech_analyzer.calculate_ma(window=200)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("MA20", f"{ma_20:.2f}")
+            with col2:
+                st.metric("MA50", f"{ma_50:.2f}")
+            with col3:
+                st.metric("MA200", f"{ma_200:.2f}")
+            
+            # Afficher le RSI
+            st.write("### RSI")
+            rsi = tech_analyzer.calculate_rsi()
+            st.metric("RSI", f"{rsi:.2f}")
+            
+            # Afficher le MACD
+            st.write("### MACD")
+            macd_data = tech_analyzer.calculate_macd()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("MACD", f"{macd_data['macd']:.2f}")
+            with col2:
+                st.metric("Signal", f"{macd_data['signal']:.2f}")
+            with col3:
+                st.metric("Histogramme", f"{macd_data['histogram']:.2f}")
+        
+        # Onglet Rapports
+        with tab3:
+            st.subheader("Génération de Rapports")
+            
+            if st.button("Générer les rapports"):
+                if 'data' not in st.session_state:
+                    st.error("Aucune donnée n'est disponible. Veuillez d'abord charger les données.")
+                    return
+                
+                data = st.session_state.data
+                symbol = st.session_state.symbol
+                
+                if data is None or len(data) == 0:
+                    st.error("Les données sont vides ou non valides.")
+                    return
+                
+                generate_reports(symbol, data)
+
+if __name__ == "__main__":
+    main()
