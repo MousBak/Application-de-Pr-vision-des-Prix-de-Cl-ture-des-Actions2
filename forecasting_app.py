@@ -150,6 +150,31 @@ if df is not None and not df.empty:
         if modeling_option == "Prophet":
             st.write("Exécution du processus de modélisation Prophet... ")
             
+            # Paramètres du modèle Prophet
+            st.sidebar.subheader("Paramètres Prophet")
+            changepoints_range_prophet = st.sidebar.slider(
+                "Plage de points de changement",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.8,
+                help="Contrôle la flexibilité de la tendance"
+            )
+            
+            test_data_percentage_prophet = st.sidebar.slider(
+                "Pourcentage de données de test",
+                min_value=0.1,
+                max_value=0.4,
+                value=0.2,
+                help="Pourcentage des données à utiliser pour le test"
+            )
+            
+            country_holidays_prophet = st.sidebar.selectbox(
+                "Pays pour les jours fériés",
+                options=["US", "FR", "GB", "DE", "JP"],
+                index=1,
+                help="Pays dont les jours fériés seront pris en compte"
+            )
+            
             try:
                 # Préparation des données pour Prophet
                 df_model = df.reset_index()
@@ -162,7 +187,7 @@ if df is not None and not df.empty:
                 else:
                     # Division train/test
                     total_days = len(df_model)
-                    train_days = int(total_days * (1 - test_data_percentage))
+                    train_days = int(total_days * (1 - test_data_percentage_prophet))
                     
                     df_train = df_model.iloc[:train_days].copy()
                     df_test = df_model.iloc[train_days:].copy()
@@ -172,12 +197,12 @@ if df is not None and not df.empty:
                     
                     # Entraînement du modèle
                     model = Prophet(
-                        changepoint_range=changepoints_range,
+                        changepoint_range=changepoints_range_prophet,
                         yearly_seasonality=True,
                         weekly_seasonality=True,
                         daily_seasonality=False
                     )
-                    model.add_country_holidays(country_name=country_holidays)
+                    model.add_country_holidays(country_name=country_holidays_prophet)
                     model.fit(df_train)
                     
                     # Prédictions
