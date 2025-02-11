@@ -7,10 +7,13 @@ import pytz
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
+from prophet import Prophet
+from prophet.plot import plot_plotly, add_changepoints_to_plot
 from prophet.serialize import model_to_json
 from pathlib import Path
 import cufflinks as cf
 import os
+from sklearn.model_selection import train_test_split
 
 # Import des modules personnalisés
 from utils.market_components import (
