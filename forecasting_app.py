@@ -1,28 +1,43 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import cufflinks as cf
-import plotly.graph_objects as go
-import datetime
 import yfinance as yf
-from bs4 import BeautifulSoup
-from sklearn.model_selection import train_test_split
-
-from prophet import Prophet
-from prophet.plot import plot_plotly
-from prophet.plot import add_changepoints_to_plot
-
+from datetime import datetime, timedelta
+import pytz
+from plotly import graph_objects as go
+from plotly.subplots import make_subplots
 import plotly.express as px
 from prophet.serialize import model_to_json
+from pathlib import Path
+import cufflinks as cf
+import os
 
-from utils import *
+# Import des modules personnalisés
+from utils.market_components import (
+    get_sp500_components,
+    get_cac40_components,
+    get_dax_components,
+    get_ftse_components,
+    get_nikkei225_components
+)
+from analysis.technical_analysis import TechnicalAnalysis
+from analysis.fundamental_analysis import FundamentalAnalysis
+from models.model_factory import ModelFactory, evaluate_model
+from models.portfolio import Portfolio
+from utils.report_generator import ReportGenerator
+from utils.utils import (
+    load_data,
+    format_ticker_symbol,
+    display_data_preview,
+    convert_df_to_csv
+)
 
 # Configuration de la page
 st.set_page_config(
-    page_title="Prévision des Prix de Clôture",
+    page_title="Prévision des Prix de Clôture des Actions",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Titre principal
@@ -68,16 +83,16 @@ ticker = st.sidebar.selectbox(
 
 start_date = st.sidebar.date_input(
     "Start Date",
-    value=datetime.date(2015, 1, 1),
-    min_value=datetime.date(2010, 1, 1),
-    max_value=datetime.date.today()
+    value=datetime(2015, 1, 1),
+    min_value=datetime(2010, 1, 1),
+    max_value=datetime.today()
 )
 
 end_date = st.sidebar.date_input(
     "End Date",
-    value=datetime.date.today(),
+    value=datetime.today(),
     min_value=start_date,
-    max_value=datetime.date.today()
+    max_value=datetime.today()
 )
 
 if start_date >= end_date:
